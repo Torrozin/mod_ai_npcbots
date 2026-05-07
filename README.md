@@ -5,7 +5,8 @@ An AI-powered dialogue system for AzerothCore NPCBots that adds immersive banter
 
 # Requirements
 
-AzerothCore with NPCBots - https://github.com/trickerer/AzerothCore-wotlk-with-NPCBots
+- AzerothCore with NPCBots by Trickerer  
+  https://github.com/trickerer/AzerothCore-wotlk-with-NPCBots
 
 Place the extracted folder inside /modules/
 
