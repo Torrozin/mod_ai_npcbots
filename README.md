@@ -5,6 +5,8 @@ An AI-powered dialogue system for AzerothCore NPCBots that adds immersive banter
 
 # Requirements
 
+AzerothCore with NPCBots - https://github.com/trickerer/AzerothCore-wotlk-with-NPCBots
+
 This module requires a small external AI gateway written in Node.js which handles communication between AzerothCore and the AI backend.
 
 The included `server.js` is configured by default to use:
