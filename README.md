@@ -46,10 +46,12 @@ This allows multiple Ollama instances to be used simultaneously for improved per
 
 The system was designed with lightweight local AI hosting in mind and works well even on modest hardware when configured correctly.
 More players and more active conversations will increase load on the AI backend (Ollama).
+
 One active Ollama instance running `mistral:7b` may require roughly:
 - 6–8 GB VRAM total
+
 Two active Ollama instances running `mistral:7b` may require roughly:
-- 12–16 GB VRAM total
+- 12–16 GB VRAM total.
 
 ---
 
