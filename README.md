@@ -72,13 +72,17 @@ The module focuses on:
 
 ---
 
-# Core Compatibility
+## Core Compatibility
 
-The module was intentionally designed to avoid requiring AzerothCore core modifications.
+This module is designed for:
 
-No core edits are required.
+- Trickerer's AzerothCore with NPCBots
+  - https://github.com/trickerer/AzerothCore-wotlk-with-NPCBots
 
-This keeps installation simple, improves compatibility with future AzerothCore updates, and makes the module easier to maintain and distribute.
+No additional core modifications are required beyond the NPCBots by Trickerer
+
+The module is fully standalone and can be added as a normal AzerothCore-wotlk-with-npcbots module without modifying core source files.
+
 
 
 
