@@ -1,0 +1,336 @@
+############################################################
+# Module By Torrozin.
+# 
+############################################################
+
+[AI]
+# 1 = AI chat is active, 0 = disabled
+AI.Enabled = 1
+
+# 1 = AI Combat Banter is active, 0 = disabled
+Combat.ChatterEnabled = 1
+
+# 1 = AI Banter is active, 0 = disabled
+Banter.ChatterEnabled = 1
+
+# URL for AI service (your local or remote endpoint for AI responses)
+AI.Endpoint = http://127.0.0.1:3000/chat
+
+# Multiple Ollama endpoints (comma separated)
+AI.Endpoints = http://127.0.0.1:3000/chat,http://127.0.0.1:3001/chat
+
+# Load balancing mode: single | roundrobin | leastactive
+AI.LoadBalancingMode = single
+
+# ##################################################
+# 🔥 AI SAFETY LIMITS
+# ##################################################
+# These settings protect the server from CPU/GPU spikes
+# and AI overload by limiting how many AI requests
+# can run and how often bots can trigger AI.
+# ##################################################
+
+# --------------------------------------------------
+# AI.MaxQueueSize
+# --------------------------------------------------
+# Maximum number of AI requests allowed in the queue.
+#
+# When this limit is reached:
+# - New AI requests are dropped
+# - Prevents backlog and CPU/GPU overload
+#
+# Higher value = more AI responses but higher CPU/GPU risk
+# Lower value  = safer but may skip some AI lines
+#
+# Recommended:
+# 10  = very safe
+# 20  = balanced (default)
+# 50+ = risky under heavy load
+#
+AI.MaxQueueSize = 20
+
+
+# --------------------------------------------------
+# AI.MaxActiveRequestsPerPlayer
+# --------------------------------------------------
+# Maximum number of simultaneous AI requests per player.
+#
+# If limit is reached:
+# - New requests for that player are ignored
+# - Prevents one player (with many bots) from
+#   consuming all CPU resources
+#
+# Recommended:
+# 1 = safest (recommended)
+# 2 = slightly more responsive, more CPU/GPU usage
+# 3+ = not recommended
+#
+AI.MaxActiveRequestsPerPlayer = 1
+
+
+# --------------------------------------------------
+# AI.CombatAIMinInterval
+# --------------------------------------------------
+# Minimum time (ms) between AI calls per bot in combat.
+#
+# Acts as a hard cooldown for combat chatter AI.
+#
+# Prevents bots from spamming AI requests during
+# frequent combat updates.
+#
+# Recommended:
+# 3000 = more talkative combat
+# 5000 = balanced (default)
+# 8000+ = very quiet combat
+#
+AI.CombatAIMinInterval = 5000
+
+##################################
+# AIBanter
+##################################
+
+[Banters]
+
+# ---------------------------------------
+# NOTE:
+# All banter state is handled PER PLAYER.
+# Each player has their own:
+# - Conversation chain (MaxChainLength)
+# - Conversation reset timer
+# - Memory history (MemoryMaxLines)
+# - Banter cooldowns
+#
+# Global settings like UpdateInterval and
+# SingleBotChance apply to all players.
+#
+# This means bots will not mix conversations
+# between different players.
+# ---------------------------------------
+
+
+# % chance that a SECOND bot joins the banter (dual conversation)
+# 0 = always single-bot chatter
+# 100 = always dual-bot chatter (if a second bot is available)
+# The higher the value the higher the load on the server will be.
+# Default 0 - less load on server.
+Banters.SingleBotChance = 0
+
+# Global banter update interval (ms)
+# Controls how often the entire banter system runs (global tick).
+# Not per-bot — this limits how frequently ALL banter logic executes.
+Banters.UpdateInterval = 70000
+
+# Minimum cooldown in ms per bot before it can speak again
+# Ensures bots don’t spam lines too quickly
+# Must be less than BotCooldownMax
+# Should be greater than UpdateInterval for smoother timing
+Banters.BotCooldownMin = 120000
+
+# Maximum cooldown in ms per bot
+# Actual cooldown is randomized between min and max for natural timing
+# Must be greater than BotCooldownMin
+Banters.BotCooldownMax = 180000
+
+# Minimum time in ms between ANY bot banter line for a player
+# Applies globally across all bots near the player (shared cooldown)
+# Prevents multiple bots from speaking too frequently or at the same time
+# Example: 90000 = 90 seconds
+#
+# SHOULD:
+# - Be greater than or equal to UpdateInterval
+# - Be less than or equal to ConversationResetTime
+#
+# This ensures proper pacing and allows conversations to continue naturally.
+Banters.PlayerBanterCooldown = 120000
+
+# Maximum number of consecutive AI-generated replies in a single conversation chain.
+# Once this limit is reached, bots will stop responding to each other
+# and the conversation will naturally end.
+# Helps prevent infinite back-and-forth chatter and spam.
+Banters.MaxChainLength = 10
+
+# Time in milliseconds after the last bot reply before a conversation is considered finished.
+# If no new replies occur within this time window, the conversation chain resets,
+# allowing a new, unrelated banter sequence to begin.
+# Example: 180000 = 3 minutes.
+#
+# IMPORTANT:
+# ConversationResetTime must be greater than PlayerBanterCooldown,
+# otherwise conversations will always reset before bots can reply.
+Banters.ConversationResetTime = 180000
+
+# ---------------------------------------
+# Adds additional randomness (in milliseconds) to the banter update timing.
+# This helps prevent bots from speaking at predictable intervals and makes
+# conversations feel more natural and less mechanical.
+#
+# Final update timing = UpdateInterval + random(0, GlobalJitter)
+#
+# SHOULD:
+# - Be lower than UpdateInterval
+# - Typical range: 1000–5000
+#
+# TOO LOW:
+# - Little effect, timing may feel robotic
+#
+# TOO HIGH:
+# - Bots may feel slow or inconsistent in responding
+#
+# PERFORMANCE:
+# - Does NOT increase load, only affects timing randomness
+Banters.GlobalJitter = 3000
+
+
+# ---------------------------------------
+# Minimum time (in milliseconds) after a bot speaks before it can be selected again,
+# even if its normal cooldown allows it.
+#
+# This prevents the same bot from speaking repeatedly and improves rotation
+# between multiple bots near the player.
+#
+# IMPORTANT:
+# - This is a SHORT-TERM anti-repeat limiter (seconds)
+# - BotCooldownMin/Max are LONG-TERM cooldowns (minutes)
+#
+# SHOULD:
+# - Be lower than BotCooldownMin
+# - Typical range: 3000–10000
+#
+# TOO LOW:
+# - Same bot may speak multiple times in a row
+#
+# TOO HIGH:
+# - Bots may feel artificially restricted or silent
+#
+# HARD LIMIT:
+# - Must NOT exceed BotCooldownMax (will be clamped if it does)
+#
+# PERFORMANCE:
+# - No impact on performance, only affects selection logic
+Banters.RecentSpeakerPenalty = 8000
+
+# Number of previous lines bots remember
+# Bots will see these lines in prompts to respond contextually
+# Higher = more context, slower AI response and longer prompts
+# Lower = less context, faster responses, may seem less aware
+#
+# Example: 
+# If 3 bots speak around the same player, MemoryMaxLines = 11
+# means the AI sees up to 11 past lines from nearby bots
+Banters.MemoryMaxLines = 11
+
+##################################
+# AICombat
+##################################
+[Combat]
+# --- Combat AI Scaling ---
+# Combat chatter is dynamically scaled based on active bot count:
+# - Timer intervals increase with more bots
+# - Speaking chance decreases with more bots
+# - Additional suppression reduces spam in large groups
+# This ensures performance stability and natural dialogue flow.
+
+#
+# Minimum time (in milliseconds) between combat chatter lines for NPC bots.
+# Lower values = more frequent talking.
+# Example: 15000 = 15 seconds.
+#
+# NOTE:
+# - Combat.ChatterMinTime MUST be lower than Combat.ChatterMaxTime.
+# - Only controlls OnUpdateCombat
+# This value is scaled with the number of active bots:
+# - More bots = longer delay between lines
+Combat.ChatterMinTime = 15000
+
+#
+# Maximum time (in milliseconds) between combat chatter lines for NPC bots.
+# Higher values = less frequent talking.
+# The system will randomly pick a value between MinTime and MaxTime.
+#
+# Also scaled with bot count to prevent excessive chatter in large groups.
+#
+# NOTE:
+# - Combat.ChatterMaxTime MUST be higher than Combat.ChatterMinTime.
+# - Only controlls OnUpdateCombat
+Combat.ChatterMaxTime = 25000
+
+#
+#    Combat.OnCombatChance
+#        Description: Chance for a bot to say a line when entering combat.
+#        Value:       0 - 100 (%)
+#        Default:     30
+#
+Combat.OnCombatChance = 30
+
+
+#
+#    Combat.UpdateCombatChance
+#        Description: Chance for a bot to speak during combat when the combat timer triggers.
+#                     The timer is controlled by Combat.ChatterMinTime and Combat.ChatterMaxTime.
+#        Value:       0 - 100 (%)
+#        Default:     40
+#
+# This value is dynamically scaled based on the number of active bots:
+# - More bots = lower chance per bot (to reduce spam)
+# - A minimum chance is enforced to keep chatter active
+Combat.UpdateCombatChance = 40
+
+
+#
+#    Combat.OnDamageChance
+#        Description: Chance for a bot to say a line when low on health (below 30% HP).
+#                     This can trigger multiple times while low HP, so high values may cause frequent chatter.
+#        Value:       0 - 100 (%)
+#        Default:     25
+#
+Combat.OnDamageChance = 25
+
+
+#
+#    Combat.VictoryChance
+#        Description: Chance for a bot to say a line after combat ends (enemy defeated).
+#        Value:       0 - 100 (%)
+#        Default:     35
+#
+Combat.VictoryChance = 35
+
+#
+#    AI.GlobalTalkDelay
+#        Description: Minimum delay between ANY AI-generated chat lines per player.
+#                     This acts as a global rate limiter to prevent spam and message bursts.
+#
+#                     Applies to BOTH:
+#                       - Banter chatter
+#                       - Combat chatter
+#
+#                     Each player has their own independent delay (does not affect others).
+#
+#                     Example:
+#                       1000 = bots can speak every 1 second (very fast / spammy)
+#                       2000 = moderate pacing
+#                       3000 = slower, more natural pacing
+#                       5000 = very calm, less frequent chatter
+#
+#                     Note:
+#                     This does NOT control how often bots WANT to speak (use chances for that).
+#                     It only controls how often they are ALLOWED to speak.
+#
+#        Value:       Time in milliseconds (ms)
+#        Default:     3000
+#
+#       Works together with combat scaling and per-bot timers.
+AI.GlobalTalkDelay = 3000
+
+##################################
+# Workerthreads
+##################################
+[Workerthreads]
+# Number of AI worker threads handling bot dialogue requests
+# Each thread processes AI requests in parallel (HTTP calls to AI server)
+# Higher values allow more simultaneous bot conversations and reduce delay when multiple players are nearby
+# Recommended: 2–4 depending on server performance and AI backend speed
+# 1 = single-threaded (default, safest)
+# WARNING: Setting too high may overload your AI endpoint instead of the game server
+AI.WorkerThreads = 2
+
+
