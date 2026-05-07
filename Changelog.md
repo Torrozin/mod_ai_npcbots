@@ -89,7 +89,7 @@
 ## Phase 10 — Performance Scaling Improvements
 
 - Added dynamic chatter scaling based on active bot count
-- Reduced CPU spikes during large bot activity
+- Reduced CPU/GPU spikes during large bot activity
 - Improved request distribution across worker threads
 - Optimized concurrency handling and thread safety
 
