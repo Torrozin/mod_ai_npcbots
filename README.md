@@ -83,7 +83,17 @@ No additional core modifications are required beyond the NPCBots by Trickerer
 
 The module is fully standalone and can be added as a normal AzerothCore-wotlk-with-npcbots module without modifying core source files.
 
+---
 
+# Party Commands
+
+Mage NPCBots support lightweight party chat commands.
+
+Available commands:
+
+```text
+/p bot food
+/p bot water
 
 
 

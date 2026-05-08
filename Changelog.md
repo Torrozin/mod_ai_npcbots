@@ -113,6 +113,15 @@ Result:
 
 ---
 
+## Added party chat commands for mage NPCBots:
+
+- /p bot food
+- /p bot water
+
+Commands now trigger the native NPCBot gossip logic.
+
+---
+
 ## Current Features
 
 - AI-generated NPC dialogue

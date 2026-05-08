@@ -24,6 +24,8 @@
 #include "AICombat.h"
 #include "NPCBotsConfig.h"
 
+void AddSC_BotPartyCommands();
+
 std::string RemoveTrailingName(const std::string& line, const std::string& botName)
 {
     std::regex pattern(R"([\s]*[-/]\s*)" + botName + R"(\s*$)");
@@ -825,6 +827,8 @@ void Addmod_ai_npcbotsScripts()
     //AIWorker::Start();
 
     // Register scripts
+    AddSC_BotPartyCommands();
+    
     new AIPlayerScript();
     new AIWorldScript();
     new mod_ai_npcbots();
