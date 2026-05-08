@@ -18,11 +18,20 @@
 #include <deque>
 #include <regex>
 #include <sstream>
+#include <thread>
+#include <atomic>
+#include <chrono>
 
 #include "AIBanter.h"
 #include "AIWorker.h"
 #include "AICombat.h"
 #include "NPCBotsConfig.h"
+
+namespace
+{
+    std::thread g_AIStartupThread;
+    std::atomic<bool> g_AIStartupCancelled = false;
+}
 
 void AddSC_BotPartyCommands();
 
@@ -107,10 +116,10 @@ public:
     void OnUpdate(uint32 diff)
     {
     
-    if (!NPCBotsConfig::Enabled || AIShuttingDown)
-    {
-    return;
-    }
+        if (!NPCBotsConfig::Enabled || AIShuttingDown.load())
+        {
+        return;
+        }
         AIBanter::Update(diff);
 
         auto const& players = ObjectAccessor::GetPlayers();
@@ -183,13 +192,11 @@ public:
                     }
                 }
             }
-
-          
-    }
+        }
 
                     /// 🔹 Handle AI responses (GLOBAL, not per player)
             AIResponse res;
-            while (!AIShuttingDown && AIWorker::PopResponse(res))
+            while (!AIShuttingDown.load() && AIWorker::PopResponse(res))
             {
                 if (AIShuttingDown)
                     break;
@@ -283,7 +290,11 @@ public:
                         continue;
 
                     std::string lower = line;
-                    std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+                    std::transform(lower.begin(), lower.end(), lower.begin(),
+                        [](unsigned char c)
+                        {
+                            return std::tolower(c);
+                        });
 
                     bool isMeta =
                     (lower.find("here are") != std::string::npos ||
@@ -417,6 +428,8 @@ public:
 
 void OnStartup() override
 {
+AIShuttingDown = false;
+
 NPCBotsConfig::Enabled = sConfigMgr->GetOption<bool>("AI.Enabled", NPCBotsConfig::Enabled);
 NPCBotsConfig::BanterChatterEnabled = sConfigMgr->GetOption<bool>("Banter.ChatterEnabled", NPCBotsConfig::BanterChatterEnabled);
 NPCBotsConfig::CombatChatterEnabled = sConfigMgr->GetOption<bool>("Combat.ChatterEnabled", NPCBotsConfig::CombatChatterEnabled);
@@ -782,16 +795,30 @@ printf("\n");
     printf("========================================\n\n");
 
     printf("\033[0m"); // reset color
+    
+    g_AIStartupCancelled = false;
 
-    std::thread([]{
-    std::this_thread::sleep_for(std::chrono::seconds(4));
+    if (g_AIStartupThread.joinable())
+        g_AIStartupThread.join();
+
+    g_AIStartupThread = std::thread([]{
+
+    for (int i = 0; i < 40; ++i)
+    {
+        if (g_AIStartupCancelled)
+            return;
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+
+    if (g_AIStartupCancelled)
+        return;
 
     if (!NPCBotsConfig::Enabled)
         return;
 
-    printf("\033[1;36m[AI] Starting AI worker...\033[0m\n");
     AIWorker::Start();
-}).detach();
+});
 
 }
 
@@ -805,8 +832,13 @@ void OnShutdown() override
     // 1. Disable new work
     AIShuttingDown = true;
     NPCBotsConfig::Enabled = false;
-
+    
     // 2. STOP worker threads properly
+    g_AIStartupCancelled = true;
+
+    if (g_AIStartupThread.joinable())
+        g_AIStartupThread.join();
+    
     AIWorker::Stop();
 
         
