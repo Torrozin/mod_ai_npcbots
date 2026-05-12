@@ -15,8 +15,10 @@
 std::string GetCreatureRaceName(Unit* unit)
 {
     if (!unit)
+    {
         return "Unknown";
-
+    }
+    
     // ---------- Player races (WotLK only) ----------
     if (unit->GetTypeId() == TYPEID_PLAYER)
     {
@@ -42,9 +44,11 @@ std::string GetCreatureRaceName(Unit* unit)
     {
         Creature* creature = unit->ToCreature();
         if (!creature || !creature->GetCreatureTemplate())
+        {
             return "Unknown Creature";
-
-        // 🔥 1. NAME-BASED DETECTION (strongest)
+        }
+        
+        // 1. NAME-BASED DETECTION (strongest)
         std::string name = creature->GetName();
         std::string lower = name;
         std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
@@ -84,7 +88,7 @@ std::string GetCreatureRaceName(Unit* unit)
                 return value;
         }
 
-        // 🔥 2. CREATURE TYPE (fallback)
+        // 2. CREATURE TYPE (fallback)
         uint32 type = creature->GetCreatureTemplate()->type;
 
         switch (type)
@@ -147,7 +151,7 @@ static std::string GetPersonalityRules(const std::string& personality)
 /// ============================
 static std::unordered_map<uint64, uint32> combatTalkTimer;
 
-// 🔥 NEW: hard limiter for AI calls per bot
+// hard limiter for AI calls per bot
 static std::unordered_map<uint64, uint32> lastAIRequestTime;
 
 /// ============================
@@ -162,8 +166,10 @@ void AICombat::OnEnterCombat(Creature* bot, Unit*)
     }
 
     if (!roll_chance_i(NPCBotsConfig::CombatOnEnterChance))
+    {
         return;
-
+    }
+    
     // Declare all variables once
     std::string personality = GetPersonality(bot);
     std::string rules = GetPersonalityRules(personality);
@@ -173,67 +179,71 @@ void AICombat::OnEnterCombat(Creature* bot, Unit*)
     std::string enemyRace = GetCreatureRaceName(victim);
     
     if (enemyRace == "Unknown")
-    enemyRace = "";
-
+    {
+        enemyRace = "";
+    }
     // Build AI prompt
     std::string prompt = "You are a World of Warcraft NPC named " + bot->GetName() + ".\n"
     "The world includes Azeroth, Outland, and Northrend.\n"
     "You are entering combat. React naturally to the situation.\n";
 
     if (!enemyRace.empty())
-{
-    prompt += "You are fighting " + enemyName + " (" + enemyRace + ").\n";
-}
-else
-{
-    prompt += "You are fighting " + enemyName + ".\n";
-}
+    {
+        prompt += "You are fighting " + enemyName + " (" + enemyRace + ").\n";
+    }
+    else
+    {
+        prompt += "You are fighting " + enemyName + ".\n";
+    }
 
-prompt +=
-"Never use the words 'mortal' or 'adventurer'.\n"
-"Personality: " + personality + "\n"
-+ rules + "\n"
-"Say a short combat line (max 8 words).\n";
-if (!enemyRace.empty())
-{
-    prompt += "Sometimes refer to the enemy by name (" + enemyName + ") or race (" + enemyRace + ") naturally, but not always.\n";
-}
-else
-{
-    prompt += "Sometimes refer to the enemy by name (" + enemyName + ") naturally, but not always.\n";
-}
+    prompt += "Never use the words 'mortal' or 'adventurer'.\n"
+    "Personality: " + personality + "\n"
+    + rules + "\n"
+    "Use ONE very short combat shout only (max 5 words).\n";
+    if (!enemyRace.empty())
+    {
+        prompt += "Sometimes refer to the enemy by name (" + enemyName + ") or race (" + enemyRace + ") naturally, but not always.\n";
+    }
+    else
+    {
+        prompt += "Sometimes refer to the enemy by name (" + enemyName + ") naturally, but not always.\n";
+    }
 
     // Enqueue request
     Player* owner = bot->GetBotOwner();
     if (!owner)
-    return;
-
+    {
+        return;
+    }
+    
     uint64 playerGuid = owner->GetGUID().GetRawValue();
     
     uint32 now = getMSTime();
     uint64 botGuid = bot->GetGUID().GetRawValue();
 
-    // 🔥 NEW: combat AI spam limiter per bot
+    // combat AI spam limiter per bot
     auto it = lastAIRequestTime.find(botGuid);
 
     if (it != lastAIRequestTime.end())
     {
-    if (it->second + NPCBotsConfig::CombatAIMinInterval > now)
-        return;
+        if (now - it->second < NPCBotsConfig::CombatAIMinInterval)
+        {
+            return;
+        }
     }
 
-lastAIRequestTime[botGuid] = now;
+    lastAIRequestTime[botGuid] = now;
 
     if (!AIWorker::CanPlayerSpeak(playerGuid, NPCBotsConfig::GlobalTalkDelay))
     {
-    return;
+        return;
     }
 
     AIWorker::EnqueueRequest({
-    playerGuid,
-    bot->GetGUID().GetRawValue(),
-    0,
-    prompt
+        playerGuid,
+        bot->GetGUID().GetRawValue(),
+        0,
+        prompt
     });
   
 }
@@ -250,11 +260,14 @@ void AICombat::OnDamageTaken(Creature* bot, uint32&)
     }
 
     if (bot->GetHealthPct() >= 30.0f)
+    {
         return;
-
+    }
+    
     if (!roll_chance_i(NPCBotsConfig::CombatDamageChance))
-    return;
-        
+    {
+        return;
+    }   
 
     std::string personality = GetPersonality(bot);
     std::string rules = GetPersonalityRules(personality);
@@ -268,25 +281,27 @@ void AICombat::OnDamageTaken(Creature* bot, uint32&)
         "Never use the words 'mortal' or 'adventurer'.\n"
         "Personality: " + personality + "\n"
         + rules + "\n"
-        "Say a short panic line (max 8 words).";
+        "Use ONE very short panic line (max 5 words).";
 
     Player* owner = bot->GetBotOwner();
     if (!owner)
-    return;
-
+    {
+        return;
+    }
+    
     uint64 playerGuid = owner->GetGUID().GetRawValue();
 
     if (!AIWorker::CanPlayerSpeak(playerGuid, NPCBotsConfig::GlobalTalkDelay))
     {
-    return;
+        return;
     }
 
     AIWorker::EnqueueRequest({
-    playerGuid,
-    bot->GetGUID().GetRawValue(),
-    0,
-    prompt
-});
+        playerGuid,
+        bot->GetGUID().GetRawValue(),
+        0,
+        prompt
+    });
 }
 
 /// ============================
@@ -306,8 +321,10 @@ void AICombat::UpdateCombat(Creature* bot, uint32 diff)
     
     Player* owner = bot->GetBotOwner();
     if (!owner)
-    return;
-
+    {
+        return;
+    }
+    
     BotMap const* bots = owner->GetBotMgr()->GetBotMap();
     uint32 botCount = bots ? bots->size() : 1;
     // Combat chatter is automatically scaled by number of bots:
@@ -325,7 +342,7 @@ void AICombat::UpdateCombat(Creature* bot, uint32 diff)
 
     /// Initialize timer
     if (combatTalkTimer.find(guid) == combatTalkTimer.end())
-        {
+    {
         // Reminder new code line will be removed when working
         uint32 minTime = NPCBotsConfig::CombatChatterMinTime * scale;
         uint32 maxTime = NPCBotsConfig::CombatChatterMaxTime * scale;
@@ -349,12 +366,18 @@ void AICombat::UpdateCombat(Creature* bot, uint32 diff)
         
 
         // Scale down chance in larger groups to further reduce chatter spam
+        if (NPCBotsConfig::CombatUpdateChance == 0)
+        {
+            return;
+        }
+        
         uint32 scaledChance = NPCBotsConfig::CombatUpdateChance / scale;
         scaledChance = std::max(5u, scaledChance);
 
         if (!roll_chance_i(scaledChance))
-        return;
-        
+        {
+            return;
+        }
 
         std::string personality = GetPersonality(bot);
         std::string rules = GetPersonalityRules(personality);
@@ -365,61 +388,72 @@ void AICombat::UpdateCombat(Creature* bot, uint32 diff)
         {
             std::string name = victim->GetName();
             if (!name.empty())
+            {
                 targetName = name;
+            }
         }
         
         std::string enemyRace = GetCreatureRaceName(victim);
         // printf("[AI DEBUG] Name: %s | Race: %s\n", targetName.c_str(), enemyRace.c_str());
 
         if (enemyRace == "None" || enemyRace == "Unknown" || enemyRace.empty())
-        enemyRace = "";
-
+        {
+            enemyRace = "";
+        }
+        
         std::string prompt = "You are a World of Warcraft NPC named " + bot->GetName() + ".\n";
        
         if (!enemyRace.empty())
-        prompt += "The enemy is " + targetName + " (" + enemyRace + ").\n";
+        {
+            prompt += "The enemy is " + targetName + " (" + enemyRace + ").\n";
+        }
         else
-        prompt += "The enemy is " + targetName + ".\n";
+        {
+            prompt += "The enemy is " + targetName + ".\n";
+        }
         
         prompt += "You are fighting the enemy.\n";
         prompt += "Never speak as the enemy.\n";
         prompt += "Never use the words 'mortal' or 'adventurer'.\n";
         prompt += "Personality: " + personality + "\n";
         prompt += rules + "\n";
-        prompt += "Say a short combat line (max 8 words).";
+        prompt += "Use ONE very short combat line (max 5 words).";
         
         uint32 now = getMSTime();
 
-    // 🔥 NEW: combat AI spam limiter per bot
-    auto it = lastAIRequestTime.find(guid);
+        // combat AI spam limiter per bot
+        auto it = lastAIRequestTime.find(guid);
 
-    if (it != lastAIRequestTime.end())
-    {
-    if (it->second + NPCBotsConfig::CombatAIMinInterval > now)
-        return;
-    }
+        if (it != lastAIRequestTime.end())
+        {
+            if (now - it->second < NPCBotsConfig::CombatAIMinInterval)
+            {
+                return;
+            }
+        }
 
-    lastAIRequestTime[guid] = now;
-           
-    uint64 playerGuid = owner->GetGUID().GetRawValue();
-     // Reminder new code
-    if (!AIWorker::CanPlayerSpeak(playerGuid, NPCBotsConfig::GlobalTalkDelay))
-    {
-    return;
-    }
+        uint64 playerGuid = owner->GetGUID().GetRawValue();
     
-    // Extra suppression: reduce chatter further in large groups
-    if (botCount > 6 && urand(0, 100) < 50)
-    return;
-    // end reminder
+        // Extra suppression: reduce chatter further in large groups
+        if (botCount > 6 && urand(0, 100) < 50)
+        {
+            return;
+        }
+        
+        lastAIRequestTime[guid] = now;
+        // Reminder new code
+        if (!AIWorker::CanPlayerSpeak(playerGuid, NPCBotsConfig::GlobalTalkDelay))
+        {
+            return;
+        }
     
     
-    AIWorker::EnqueueRequest({
-    playerGuid,
-    bot->GetGUID().GetRawValue(),
-    0,
-    prompt
-});
+        AIWorker::EnqueueRequest({
+            playerGuid,
+            bot->GetGUID().GetRawValue(),
+            0,
+            prompt
+        });
     
     }
     else
@@ -440,8 +474,10 @@ void AICombat::OnCombatEnd(Creature* bot)
     }
 
     if (!roll_chance_i(NPCBotsConfig::CombatVictoryChance))
+    {
         return;
-
+    }
+    
     std::string personality = GetPersonality(bot);
     std::string rules = GetPersonalityRules(personality);
 
@@ -455,19 +491,21 @@ void AICombat::OnCombatEnd(Creature* bot)
 
     Player* owner = bot->GetBotOwner();
     if (!owner)
-    return;
+    {
+        return;
+    }
 
     uint64 playerGuid = owner->GetGUID().GetRawValue();
 
     if (!AIWorker::CanPlayerSpeak(playerGuid, NPCBotsConfig::GlobalTalkDelay))
     {
-    return;
+        return;
     }
     
     AIWorker::EnqueueRequest({
-    playerGuid,
-    bot->GetGUID().GetRawValue(),
-    0,
-    prompt
-});
+        playerGuid,
+        bot->GetGUID().GetRawValue(),
+        0,
+        prompt
+    });
 }

@@ -37,6 +37,8 @@ static std::mutex playerLastTalkTimeMutex;
 // NEW: active request tracking per player
 static std::unordered_map<uint64, uint32> activeRequests;
 
+static std::mutex activeRequestsMutex;
+
 // ---------------------
 // Worker thread
 // ---------------------
@@ -45,67 +47,76 @@ void AIWorker::WorkerThread()
     try
     {
         while (true)
-{
-    AIRequest req;
-    bool hasRequest = false;
-
-    {
-        std::unique_lock<std::mutex> lock(requestMutex);
-
-        cv.wait(lock, [] {
-            return !AIWorker::requestQueue.empty() || !AIWorker::running;
-        });
-
-        // SAFE EXIT CONDITION
-        if (!running && requestQueue.empty())
-            break;
-
-        if (!requestQueue.empty())
         {
-            req = requestQueue.front();
-            requestQueue.pop();
-            hasRequest = true;
+            AIRequest req;
+            bool hasRequest = false;
+
+            {
+                std::unique_lock<std::mutex> lock(requestMutex);
+
+                cv.wait(lock, [] {
+                    return !AIWorker::requestQueue.empty() || !AIWorker::running;
+                });
+
+                // SAFE EXIT CONDITION
+                if (!running && requestQueue.empty())
+                    break;
+
+                if (!requestQueue.empty())
+                {
+                    req = requestQueue.front();
+                    requestQueue.pop();
+                    hasRequest = true;
+                }
+            }
+
+            if (!hasRequest)
+                continue;
+
+            // ---------------------------
+            // Safe HTTP call
+            // ---------------------------
+            std::string reply;
+
+            try
+            {
+                reply = HttpClient::Post(req.prompt);
+            }
+            catch (...)
+            {
+                reply = "...";
+            }
+
+            if (reply.empty())
+                reply = "...";
+
+            AIResponse res;
+            res.playerGUID = req.playerGUID;
+            res.botGUID  = req.botGUID;
+            res.botGUID2 = req.botGUID2;
+            res.text     = reply;
+
+            {
+                std::lock_guard<std::mutex> lock(responseMutex);
+                responseQueue.push(res);
+            }
+
+            // Decrease active request count
+            {
+                std::lock_guard<std::mutex> lock(activeRequestsMutex);
+
+                auto itr = activeRequests.find(res.playerGUID);
+
+                if (itr != activeRequests.end())
+                {
+                    if (itr->second > 0)
+                        --itr->second;
+
+                    if (itr->second == 0)
+                        activeRequests.erase(itr);
+                }
+            }
         }
-    }
-
-    if (!hasRequest)
-        continue;
-
-    // ---------------------------
-    // Safe HTTP call
-    // ---------------------------
-    std::string reply;
-    try 
-    { 
-        reply = HttpClient::Post(req.prompt);
-    }
-    catch (...) 
-    { 
-        reply = "..."; 
-    }
-
-    if (reply.empty()) reply = "...";
-
-    AIResponse res;
-    res.playerGUID = req.playerGUID;
-    res.botGUID  = req.botGUID;
-    res.botGUID2 = req.botGUID2;
-    res.text     = reply;
-    
-
-    {
-        std::lock_guard<std::mutex> lock(responseMutex);
-        responseQueue.push(res);
-    }
-    
-    // 🔥 NEW: decrease active request count
-    {
-    std::lock_guard<std::mutex> lock(requestMutex);
-    if (activeRequests[res.playerGUID] > 0)
-        activeRequests[res.playerGUID]--;
-    }
-    
-}
     }
     catch (...)
     {
@@ -118,7 +129,11 @@ void AIWorker::WorkerThread()
 // ---------------------
 void AIWorker::Start()
 {
-    if (running) return;
+    if (running)
+        return;
+
+    stopped = false; // reset shutdown state
+
     running = true;
 
     uint32 count = std::max<uint32>(1, NPCBotsConfig::WorkerThreads);
@@ -174,6 +189,20 @@ void AIWorker::Stop()
     playerLastTalkTime.clear();
     }
     
+    {
+        std::lock_guard<std::mutex> lock(activeRequestsMutex);
+
+        // Preserve safe shutdown behavior:
+        // worker threads are already joined above,
+        // so active requests should already be drained naturally.
+        // Avoid force-clearing state during shutdown.
+        if (!activeRequests.empty())
+        {
+            printf("   [AI] Waiting requests drained: %zu\n",
+                activeRequests.size());
+        }
+    }
+    
     // FINAL MESSAGE
     
     printf("   ✔ Queue handled\n");
@@ -220,14 +249,21 @@ void AIWorker::EnqueueRequest(const AIRequest& req)
     }
 
     {
-        std::lock_guard<std::mutex> lock(requestMutex);
+        std::lock_guard<std::mutex> requestLock(requestMutex);
+        std::lock_guard<std::mutex> activeLock(activeRequestsMutex);
 
-        // 🔥 NEW: queue size protection
+        // Queue protection
         if (requestQueue.size() >= NPCBotsConfig::MaxQueueSize)
             return;
 
-        // 🔥 NEW: per-player active request limit
-        if (activeRequests[req.playerGUID] >= NPCBotsConfig::MaxActiveRequestsPerPlayer)
+        auto itr = activeRequests.find(req.playerGUID);
+
+        uint32 current = (itr != activeRequests.end())
+            ? itr->second
+            : 0;
+
+        // Per-player limit
+        if (current >= NPCBotsConfig::MaxActiveRequestsPerPlayer)
             return;
 
         requestQueue.push(req);
@@ -235,6 +271,12 @@ void AIWorker::EnqueueRequest(const AIRequest& req)
     }
 
     cv.notify_one();
+}
+
+void AIWorker::CleanupPlayerTalkTime(uint64 playerGUID)
+{
+    std::lock_guard<std::mutex> lock(playerLastTalkTimeMutex);
+    playerLastTalkTime.erase(playerGUID);
 }
 
 bool AIWorker::CanPlayerSpeak(uint64 playerGUID, uint32 delayMs)
@@ -245,7 +287,7 @@ bool AIWorker::CanPlayerSpeak(uint64 playerGUID, uint32 delayMs)
 
     uint32& lastTime = playerLastTalkTime[playerGUID];
 
-    if (lastTime + delayMs > now)
+    if (now - lastTime < delayMs)
         return false;
 
     lastTime = now;

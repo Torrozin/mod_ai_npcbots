@@ -18,7 +18,8 @@
 #include <string>
 
 extern std::unordered_map<uint64, std::deque<std::string>> playerGlobalMemory;
-/// 🔹 Get bot faction name for AI prompt
+extern std::unordered_map<uint64, std::deque<std::string>> botMemory;
+/// Get bot faction name for AI prompt
 static std::string GetBotFactionName(Creature* bot)
 {
     if (!bot) return "Neutral";
@@ -32,7 +33,7 @@ static std::string GetBotFactionName(Creature* bot)
     }
 }
 
-//static uint32 banterTimer = 0; //old
+// static uint32 banterTimer = 0; //old
 uint32 AIBanter::banterTimer = 0;
 // Track when each bot last spoke
 static std::unordered_map<uint64, uint32> botLastSpeak;
@@ -40,14 +41,49 @@ static std::unordered_map<uint64, uint32> botLastSpeak;
 // Track the next allowed speak time per bot
 static std::unordered_map<uint64, uint32> botNextSpeakTime;
 
-// Optional: memory of previous lines
-static std::unordered_map<uint64, std::deque<std::string>> botMemory;
+// Player timing state
+std::unordered_map<uint64, uint32> playerNextBanterTime;
+std::unordered_map<uint64, uint32> playerLastUpdate;
 
-// 🔥 NEW: conversation chain tracking
+template<typename T>
+void CleanupBotMap(T& map)
+{
+    for (auto itr = map.begin(); itr != map.end(); )
+    {
+        bool exists = false;
+
+        auto const& players = ObjectAccessor::GetPlayers();
+
+        for (auto const& pair : players)
+        {
+            Player* player = pair.second;
+
+            if (!player)
+                continue;
+
+            Creature* bot = ObjectAccessor::GetCreature(
+                *player,
+                ObjectGuid(itr->first));
+
+            if (bot && bot->IsInWorld())
+            {
+                exists = true;
+                break;
+            }
+        }
+
+        if (!exists)
+            itr = map.erase(itr);
+        else
+            ++itr;
+    }
+}
+
+// conversation chain tracking
 std::unordered_map<uint64, uint32> globalConversationChain;
 std::unordered_map<uint64, uint32> lastConversationTime;
 
-/// 🔹 Find nearby bot (safe AzerothCore version)
+/// Find nearby bot (safe AzerothCore version)
 Creature* AIBanter::FindNearbyBot(Player* player, Creature* excludeBot)
 {
     if (!player)
@@ -78,7 +114,7 @@ Creature* AIBanter::FindNearbyBot(Player* player, Creature* excludeBot)
     return nullptr;
 }
 
-/// 🔹 Personality system
+/// Personality system
 static std::string GetPersonality(Creature* bot)
 {
     // uint32 entry = bot->GetEntry(); // we do not need this anymore
@@ -98,29 +134,29 @@ static std::string GetPersonality(Creature* bot)
     return "normal";
 }
 
-/// 🔹 Personality rules
+/// Personality rules
 static std::string GetPersonalityRules(const std::string& personality)
 {
     if (personality == "funny")
-    return "Be humorous, sarcastic, and playful. Occasionally tease others.";
+        return "Be humorous, sarcastic, and playful. Occasionally tease others.";
 
     if (personality == "toxic")
-    return "Be rude, arrogant, and dismissive, but not obscene.";
+        return "Be rude, arrogant, and dismissive, but not obscene.";
 
     if (personality == "roleplay")
-    return "Speak like a true Warcraft character, immersive and serious.";
+        return "Speak like a true Warcraft character, immersive and serious.";
 
     if (personality == "serious")
-    return "Be calm, focused, and practical. Avoid jokes and stay on topic.";
+        return "Be calm, focused, and practical. Avoid jokes and stay on topic.";
     
     if (personality == "brave")
-    return "Be bold, fearless, and eager for danger. Push others toward action and risk.";
+        return "Be bold, fearless, and eager for danger. Push others toward action and risk.";
     
     if (personality == "grumpy")
-    return "Be grumpy, blunt, and easily annoyed. Complain about things but stay in character.";
+        return "Be grumpy, blunt, and easily annoyed. Complain about things but stay in character.";
     
     if (personality == "curious")
-    return "Be curious and observant. Ask questions, explore ideas, and show interest in everything around you.";
+        return "Be curious and observant. Ask questions, explore ideas, and show interest in everything around you.";
 
     return "Be neutral.";
 }
@@ -171,8 +207,20 @@ void AIBanter::Update(uint32 diff)
         return;
     }   
     
-    // 🔹 Update module timer
+    // Update module timer
     banterTimer += diff;
+    
+    static uint32 cleanupTimer = 0;
+    cleanupTimer += diff;
+
+    if (cleanupTimer >= 600000) // every 10 minutes
+    {
+        cleanupTimer = 0;
+
+        CleanupBotMap(botMemory);
+        CleanupBotMap(botLastSpeak);
+        CleanupBotMap(botNextSpeakTime);
+    }
 
     // Do NOT early return anymore — we process continuously
     // and handle timing per-player instead
@@ -180,118 +228,115 @@ void AIBanter::Update(uint32 diff)
     // uint32 interval = NPCBotsConfig::UpdateInterval;
     // uint32 nowGlobal = getMSTime();
 
-    // 🔹 Process ALL players in world
+    // Process ALL players in world
     auto const& players = ObjectAccessor::GetPlayers();
 
     for (auto const& pair : players)
     {
-    Player* player = pair.second;
-    if (!player)
-        continue;
+        Player* player = pair.second;
+        if (!player)
+            continue;
 
-    // 🔹 Configurable global player-level cooldown
-    static std::unordered_map<uint64, uint32> playerNextBanterTime;
-    uint32 now = getMSTime();
-    uint64 playerGuid = player->GetGUID().GetRawValue();
+        // Configurable global player-level cooldown
+        uint32 now = getMSTime();
+        uint64 playerGuid = player->GetGUID().GetRawValue();
 
-    // 🔥 Per-player update timing (DESYNC FIX)
-    static std::unordered_map<uint64, uint32> playerLastUpdate;
+        // Per-player update timing (DESYNC FIX)
+        if (playerLastUpdate.find(playerGuid) == playerLastUpdate.end())
+        {
+            // Initial offset based on GUID (stable, no randomness needed)
+            uint32 offset = (playerGuid * 7919u) % NPCBotsConfig::UpdateInterval;
+            playerLastUpdate[playerGuid] = now - offset;
+        }
 
-    if (playerLastUpdate.find(playerGuid) == playerLastUpdate.end())
-    {
-        // Initial offset based on GUID (stable, no randomness needed)
-        uint32 offset = playerGuid % NPCBotsConfig::UpdateInterval;
-        playerLastUpdate[playerGuid] = now - offset;
-    }
+        uint32 baseInterval = NPCBotsConfig::UpdateInterval;
 
-    uint32 baseInterval = NPCBotsConfig::UpdateInterval;
+        // add jitter to break timing patterns
+        uint32 jitter = urand(0, NPCBotsConfig::GlobalJitter);
 
-    // 🔥 NEW: add jitter to break timing patterns
-    uint32 jitter = urand(0, NPCBotsConfig::GlobalJitter);
+        // Keep your GUID-based offset (good design)
+        // Stable desynced offset per player
+        uint32 offset = ((playerGuid * 7919u) ^ (playerGuid >> 8)) % baseInterval;
 
-    // Keep your GUID-based offset (good design)
-    uint32 offset = playerGuid % baseInterval;
+        // Final next update time
+        uint32 requiredDelay = baseInterval + offset + jitter;
 
-    // Final next update time
-    uint32 nextUpdate = playerLastUpdate[playerGuid] + baseInterval + offset + jitter;
+        if (now - playerLastUpdate[playerGuid] < requiredDelay)
+            continue;
 
-    if (now < nextUpdate)
-    {
-        continue; // skip this player only
-    }
+        // Update timestamp
+        playerLastUpdate[playerGuid] = now;
 
-    // Update timestamp
-    playerLastUpdate[playerGuid] = now;
-
-    if (lastConversationTime.find(playerGuid) == lastConversationTime.end())
-    lastConversationTime[playerGuid] = now;
-
-    bool isConversationActive = (now - lastConversationTime[playerGuid]) < NPCBotsConfig::ConversationResetTime;
+        if (lastConversationTime.find(playerGuid) == lastConversationTime.end())
+        {
+            lastConversationTime[playerGuid] = now;
+        }
+        bool isConversationActive = (now - lastConversationTime[playerGuid]) < NPCBotsConfig::ConversationResetTime;
  
-    // Reset chain if too much time passed (10 sec = new conversation)
-    if (now - lastConversationTime[playerGuid] > NPCBotsConfig::ConversationResetTime)
-    {
-    globalConversationChain[playerGuid] = 0;
-    }
+        // Reset chain if too much time passed (10 sec = new conversation)
+        if (now - lastConversationTime[playerGuid] > NPCBotsConfig::ConversationResetTime)
+        {
+            globalConversationChain[playerGuid] = 0;
+        }
     
-    // use existing playerGuid (do not redeclare)
-    // uint64 playerGuid = player->GetGUID().GetRawValue();
+        // use existing playerGuid (do not redeclare)
+        // uint64 playerGuid = player->GetGUID().GetRawValue();
 
-    if (playerNextBanterTime.find(playerGuid) == playerNextBanterTime.end())
-        playerNextBanterTime[playerGuid] = 0;
+        if (playerNextBanterTime.find(playerGuid) == playerNextBanterTime.end())
+            playerNextBanterTime[playerGuid] = 0;
 
-    if (!isConversationActive && now < playerNextBanterTime[playerGuid])
-    {
-    continue; // skip update if global cooldown not expired
-    }
+        if (!isConversationActive && (int32)(now - playerNextBanterTime[playerGuid]) < 0)
+        {
+            continue;
+        }
     
-    // 🔹 Get bots in range
-    BotMap const* bots = player->GetBotMgr()->GetBotMap();
-    if (!bots || bots->empty())
-    {
-        continue;
-     }   
-    // 🔥 PRIORITY SYSTEM: Combat > Banter
-    // If ANY bot of this player is in combat → stop ALL banter for this player
-    bool playerInCombat = false;
+        // Get bots in range
+        BotMap const* bots = player->GetBotMgr()->GetBotMap();
+        if (!bots || bots->empty())
+        {
+            continue;
+        }   
+        // PRIORITY SYSTEM: Combat > Banter
+        // If ANY bot of this player is in combat → stop ALL banter for this player
+        bool playerInCombat = false;
 
-    for (auto const& pair : *bots)
-    {
-    Creature* bot = pair.second;
-    if (!bot)
-    {
-    continue;
-    }
+        for (auto const& pair : *bots)
+        {
+            Creature* bot = pair.second;
+            if (!bot)
+            {
+                continue;
+            }
     
-    if (bot->IsInCombat())
-    {
-        playerInCombat = true;
-        break;
-    }
-}
+            if (bot->IsInCombat())
+            {
+                playerInCombat = true;
+                    break;
+            }
+        }
 
-    if (playerInCombat)
-    {
-    continue; // skip this player entirely
-    }
+        if (playerInCombat)
+        {
+            continue; // skip this player entirely
+        }
     
-    std::vector<Creature*> botList;
-    for (auto const& pair : *bots)
-    {
-    Creature* bot = pair.second;
-    if (!bot) continue;
+        std::vector<Creature*> botList;
+        for (auto const& pair : *bots)
+        {
+            Creature* bot = pair.second;
+            if (!bot) continue;
 
-    // 🔥 Skip bots in combat
-    if (bot->IsInCombat())
-        continue;
+            // Skip bots in combat
+            if (bot->IsInCombat())
+                continue;
 
-    if (bot->GetDistance(player) <= 50.0f)
-        botList.push_back(bot);
-    }
+            if (bot->GetDistance(player) <= 50.0f)
+                botList.push_back(bot);
+        }
     if (botList.empty())
         continue;
 
-    // 🔹 Shuffle bots
+    // Shuffle bots
     std::random_device rd;
     std::mt19937 g(rd());
     std::shuffle(botList.begin(), botList.end(), g);
@@ -306,7 +351,7 @@ void AIBanter::Update(uint32 diff)
             botNextSpeakTime[guid] = 0;
 
         // Must pass cooldown first
-        if (now < botNextSpeakTime[guid])
+        if ((int32)(now - botNextSpeakTime[guid]) < 0)
             continue;
 
         //  NEW: RecentSpeakerPenalty
@@ -330,9 +375,9 @@ void AIBanter::Update(uint32 diff)
 
     // SingleBotChance affects bot2 only
     if (bot2 && !roll_chance_i(NPCBotsConfig::SingleBotChance))
-    bot2 = nullptr;
+        bot2 = nullptr;
 
-    // 🔹 Swap if only bot2 left
+    // Swap if only bot2 left
     if (!bot1 && bot2)
     {
         bot1 = bot2;
@@ -342,24 +387,24 @@ void AIBanter::Update(uint32 diff)
     if (!bot1)
         continue;
     
-    // 🔥 HARD LIMIT: stop conversation after 5 replies
+    // HARD LIMIT: stop conversation after 5 replies
     if (globalConversationChain[playerGuid] >= NPCBotsConfig::MaxChainLength)
-    continue;
+        continue;
     
-    // 🔥 GLOBAL + LOCAL memory combined
+    // GLOBAL + LOCAL memory combined
     std::string memoryText;
     std::vector<std::string> combinedMemory;
     
     if (bot1)
     {
-    auto& dq1 = botMemory[bot1->GetGUID().GetRawValue()];
-    combinedMemory.insert(combinedMemory.end(), dq1.begin(), dq1.end());
+        auto& dq1 = botMemory[bot1->GetGUID().GetRawValue()];
+        combinedMemory.insert(combinedMemory.end(), dq1.begin(), dq1.end());
     }
 
     if (bot2)
     {
-    auto& dq2 = botMemory[bot2->GetGUID().GetRawValue()];
-    combinedMemory.insert(combinedMemory.end(), dq2.begin(), dq2.end());
+        auto& dq2 = botMemory[bot2->GetGUID().GetRawValue()];
+        combinedMemory.insert(combinedMemory.end(), dq2.begin(), dq2.end());
     }
 
     // 1. Global memory first (world memory)
@@ -369,14 +414,14 @@ void AIBanter::Update(uint32 diff)
     
     for (size_t i = startGlobal; i < globalMemory.size(); ++i)
     {
-    memoryText += globalMemory[i] + "\n";
+        memoryText += globalMemory[i] + "\n";
     }
     
     size_t startLocal = combinedMemory.size() > maxLines ? combinedMemory.size() - maxLines : 0;
 
     for (size_t i = startLocal; i < combinedMemory.size(); ++i)
     {
-    memoryText += combinedMemory[i] + "\n";
+        memoryText += combinedMemory[i] + "\n";
     }
 
     // 2. Local bot memory (extra personality context)
@@ -384,7 +429,7 @@ void AIBanter::Update(uint32 diff)
     
     
     
-    // 🔹 Names and personalities
+    // Names and personalities
     std::string name1 = bot1->GetName();
     std::string name2 = bot2 ? bot2->GetName() : "";
     uint8 class1 = bot1->GetClass();
@@ -405,7 +450,7 @@ void AIBanter::Update(uint32 diff)
     std::string zoneName = zone ? zone->area_name[0] : "Unknown";
     std::string areaName = area ? area->area_name[0] : zoneName;
     
-    // 🔹 Build AI prompt
+    // Build AI prompt
     std::string faction1 = GetBotFactionName(bot1);
     std::string faction2 = bot2 ? GetBotFactionName(bot2) : "";
 
@@ -427,7 +472,10 @@ Keep transitions natural and avoid abrupt or frequent topic changes.
 Each character may interpret topics differently based on their personality.
 Each line should respond to or build on the previous one.
 
-Keep replies short (max 15 words) and concise.
+Keep replies short and concise.
+Maximum 12 words.
+Do not narrate.
+Do not explain actions.
 )";
 
 prompt += "Location: " + areaName + " in " + zoneName + ".\n";
@@ -482,12 +530,12 @@ You may briefly acknowledge the change, but do not dwell on it.
     // {
     // return;
     // }
-    // 🔥 Increase chain length
+    // Increase chain length
     globalConversationChain[playerGuid]++;
     lastConversationTime[playerGuid] = now;
     
         
-    // 🔹 Send request to AIWorker
+    //  Send request to AIWorker
     if (!AIWorker::CanPlayerSpeak(playerGuid, NPCBotsConfig::GlobalTalkDelay))
     {
         continue;
@@ -501,7 +549,7 @@ You may briefly acknowledge the change, but do not dwell on it.
     prompt
     });
 
-    // 🔹 Update per-bot cooldowns
+    // Update per-bot cooldowns
     uint32 minC = NPCBotsConfig::BotCooldownMin;
     uint32 maxC = NPCBotsConfig::BotCooldownMax;
     if (maxC < minC) std::swap(minC, maxC);
@@ -514,7 +562,7 @@ You may briefly acknowledge the change, but do not dwell on it.
     if (bot2)
         botLastSpeak[bot2->GetGUID().GetRawValue()] = now;
 
-    // 🔹 Update configurable player-level cooldown from conf
+    // Update configurable player-level cooldown from conf
     playerNextBanterTime[playerGuid] = now + NPCBotsConfig::PlayerBanterCooldown;
-    } // 🔹 END player loop
+    } // END player loop
 }

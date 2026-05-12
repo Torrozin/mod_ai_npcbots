@@ -13,17 +13,25 @@ Combat.ChatterEnabled = 1
 # 1 = AI Banter is active, 0 = disabled
 Banter.ChatterEnabled = 1
 
-# URL for AI service (your local or remote endpoint for AI responses)
+# Fallback URL for AI service.
+# Used only when AI.Endpoints is empty.
+# If AI.Endpoints contains one or more URLs, the endpoint list takes priority.
 AI.Endpoint = http://127.0.0.1:3000/chat
 
-# Multiple Ollama endpoints (comma separated)
+# Primary AI endpoint list (comma separated).
+# Used by:
+# - single: uses the first endpoint in this list
+# - roundrobin: rotates through the list
+# - leastactive: chooses the endpoint with fewest active requests
+#
+# Leave empty to use AI.Endpoint instead.
 AI.Endpoints = http://127.0.0.1:3000/chat,http://127.0.0.1:3001/chat
 
 # Load balancing mode: single | roundrobin | leastactive
 AI.LoadBalancingMode = single
 
 # ##################################################
-# 🔥 AI SAFETY LIMITS
+# AI SAFETY LIMITS
 # ##################################################
 # These settings protect the server from CPU/GPU spikes
 # and AI overload by limiting how many AI requests
@@ -58,7 +66,7 @@ AI.MaxQueueSize = 20
 # If limit is reached:
 # - New requests for that player are ignored
 # - Prevents one player (with many bots) from
-#   consuming all CPU resources
+#   consuming all CPU/GPU resources
 #
 # Recommended:
 # 1 = safest (recommended)
@@ -84,6 +92,44 @@ AI.MaxActiveRequestsPerPlayer = 1
 # 8000+ = very quiet combat
 #
 AI.CombatAIMinInterval = 5000
+
+
+# --------------------------------------------------
+# AI.HttpTimeoutMs
+# --------------------------------------------------
+# Maximum time (ms) a worker thread may wait on a fast
+# AI HTTP socket operation:
+# - connect
+# - send
+#
+# This prevents dead or unreachable AI endpoints from
+# keeping worker threads blocked for a long time.
+#
+# Recommended:
+# 3000 = fast failover, good for local endpoints
+# 5000 = balanced (default)
+# 10000+ = slower but tolerant of remote endpoints
+#
+AI.HttpTimeoutMs = 5000
+
+
+# --------------------------------------------------
+# AI.HttpResponseTimeoutMs
+# --------------------------------------------------
+# Maximum time (ms) a worker thread may wait for the
+# AI service to generate and return a response after
+# the request has been sent.
+#
+# This should be higher than AI.HttpTimeoutMs because
+# local AI generation can legitimately take several
+# seconds, especially with larger models.
+#
+# Recommended:
+# 15000 = fast local models
+# 30000 = balanced (default)
+# 60000 = slower remote or large models
+#
+AI.HttpResponseTimeoutMs = 30000
 
 ##################################
 # AIBanter

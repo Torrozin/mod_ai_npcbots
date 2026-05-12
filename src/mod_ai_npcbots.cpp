@@ -41,9 +41,28 @@ std::string RemoveTrailingName(const std::string& line, const std::string& botNa
     return std::regex_replace(line, pattern, "");
 }
 
-static std::unordered_map<uint64, std::deque<std::string>> botMemory;  // stores previous lines per bot
+static void TrimChatLine(std::string& line)
+{
+    line.erase(0, line.find_first_not_of(" \t\r\n"));
+
+    size_t end = line.find_last_not_of(" \t\r\n");
+    if (end == std::string::npos)
+    {
+        line.clear();
+        return;
+    }
+
+    line.erase(end + 1);
+}
+
+std::unordered_map<uint64, std::deque<std::string>> botMemory;  // stores previous lines per bot
 static std::atomic<bool> AIShuttingDown(false);
+static uint32 g_AICleanupTimer = 0;
 std::unordered_map<uint64, std::deque<std::string>> playerGlobalMemory;
+extern std::unordered_map<uint64, uint32> lastConversationTime;
+extern std::unordered_map<uint64, uint32> globalConversationChain;
+extern std::unordered_map<uint64, uint32> playerNextBanterTime;
+extern std::unordered_map<uint64, uint32> playerLastUpdate;
 static std::unordered_map<uint64, uint32> botLastSpeak;
 
 static Creature* SafeGetCreature(WorldObject* context, uint64 guid)
@@ -101,6 +120,19 @@ public:
         // Debug: confirm enqueue (optional, can keep for testing)
         player->SendSystemMessage("DEBUG: Player message handled for bot " + bot->GetName());
     }
+    
+    void OnLogout(Player* player)
+    {
+        if (!player)
+            return;
+
+        uint64 playerGuid = player->GetGUID().GetRawValue();
+
+        playerNextBanterTime.erase(playerGuid);
+        playerLastUpdate.erase(playerGuid);
+
+        AIWorker::CleanupPlayerTalkTime(playerGuid);
+    }
 };
 
 /// ============================
@@ -118,8 +150,40 @@ public:
     
         if (!NPCBotsConfig::Enabled || AIShuttingDown.load())
         {
-        return;
+            return;
         }
+        
+        g_AICleanupTimer += diff;
+
+        if (g_AICleanupTimer >= 300000) // every 5 minutes
+        {
+            g_AICleanupTimer = 0;
+
+            auto CleanupPlayerMap = [](auto& map)
+            {
+                for (auto itr = map.begin(); itr != map.end(); )
+                {
+                    Player* player = ObjectAccessor::FindPlayer(ObjectGuid(itr->first));
+
+                    if (!player || !player->IsInWorld())
+                    {
+                        itr = map.erase(itr);
+                    }
+                    else
+                    {
+                        ++itr;
+                    }
+                }
+            };
+
+            CleanupPlayerMap(playerGlobalMemory);
+            CleanupPlayerMap(lastConversationTime);
+            CleanupPlayerMap(globalConversationChain);
+            // Banter timing cleanup
+            CleanupPlayerMap(playerNextBanterTime);
+            CleanupPlayerMap(playerLastUpdate);
+        }
+        
         AIBanter::Update(diff);
 
         auto const& players = ObjectAccessor::GetPlayers();
@@ -216,6 +280,7 @@ public:
                     bot2 = nullptr;
 
                 std::string text = res.text;
+                std::string originalText = text;
 
                 if (!text.empty() && text.front() == '"') text.erase(0, 1);
                 if (!text.empty() && text.back() == '"') text.pop_back();
@@ -256,6 +321,8 @@ public:
 
                 while (std::getline(ss, line))
                 {
+                    TrimChatLine(line);
+
                     if (line.empty())
                         continue;
 
@@ -285,6 +352,8 @@ public:
 
                     if (!line.empty() && line.front() == '"') line.erase(0, 1);
                     if (!line.empty() && line.back() == '"') line.pop_back();
+
+                    TrimChatLine(line);
 
                     if (line.empty())
                         continue;
@@ -341,6 +410,19 @@ public:
                     lines.push_back(line);
                 }
 
+                if (lines.empty())
+                {
+                    TrimChatLine(originalText);
+
+                    if (!originalText.empty() &&
+                        originalText != "..." &&
+                        originalText.find("ERROR") == std::string::npos &&
+                        originalText.length() <= 200)
+                    {
+                        lines.push_back(originalText);
+                    }
+                }
+
                 if (bot1 && bot1->IsInWorld() && !bot1->IsDuringRemoveFromWorld() && !lines.empty() &&
                     lines[0] != "..." &&
                     lines[0].find("ERROR") == std::string::npos)
@@ -382,7 +464,6 @@ public:
                     }
                 }
 
-                extern std::unordered_map<uint64, uint32> lastConversationTime;
                 lastConversationTime[playerGuid] = getMSTime();
 
                 if (bot2 && lines.size() > 1)
@@ -476,6 +557,8 @@ NPCBotsConfig::GlobalTalkDelay = sConfigMgr->GetOption<uint32>("AI.GlobalTalkDel
 NPCBotsConfig::MaxQueueSize = sConfigMgr->GetOption<uint32>("AI.MaxQueueSize", NPCBotsConfig::MaxQueueSize);
 NPCBotsConfig::MaxActiveRequestsPerPlayer = sConfigMgr->GetOption<uint32>("AI.MaxActiveRequestsPerPlayer", NPCBotsConfig::MaxActiveRequestsPerPlayer);
 NPCBotsConfig::CombatAIMinInterval = sConfigMgr->GetOption<uint32>("AI.CombatAIMinInterval", NPCBotsConfig::CombatAIMinInterval);
+NPCBotsConfig::HttpTimeoutMs = sConfigMgr->GetOption<uint32>("AI.HttpTimeoutMs", NPCBotsConfig::HttpTimeoutMs);
+NPCBotsConfig::HttpResponseTimeoutMs = sConfigMgr->GetOption<uint32>("AI.HttpResponseTimeoutMs", NPCBotsConfig::HttpResponseTimeoutMs);
 
 NPCBotsConfig::CombatChatterMinTime = sConfigMgr->GetOption<uint32>("Combat.ChatterMinTime", NPCBotsConfig::CombatChatterMinTime);
 NPCBotsConfig::CombatChatterMaxTime = sConfigMgr->GetOption<uint32>("Combat.ChatterMaxTime", NPCBotsConfig::CombatChatterMaxTime);
@@ -496,6 +579,16 @@ NPCBotsConfig::CombatVictoryChance = sConfigMgr->GetOption<uint32>("Combat.Victo
 
     printf("\033[1;33m");
     printf("[AI WARNING] Banters.SingleBotChance > 100. Clamped to 100.\n");
+    printf("\033[0m");
+    }
+
+    // UpdateInterval must never be 0 because banter uses it for GUID-based modulo timing.
+    if (NPCBotsConfig::UpdateInterval == 0)
+    {
+    NPCBotsConfig::UpdateInterval = 1;
+
+    printf("\033[1;33m");
+    printf("[AI WARNING] Banters.UpdateInterval was 0. Set to 1 ms.\n");
     printf("\033[0m");
     }
 
@@ -723,6 +816,42 @@ NPCBotsConfig::CombatVictoryChance = sConfigMgr->GetOption<uint32>("Combat.Victo
     printf("[AI WARNING] AI.CombatAIMinInterval too high. Clamped to 60000 ms.\n");
     printf("\033[0m");
     }
+
+    if (NPCBotsConfig::HttpTimeoutMs < 500)
+    {
+    NPCBotsConfig::HttpTimeoutMs = 500;
+
+    printf("\033[1;33m");
+    printf("[AI WARNING] AI.HttpTimeoutMs too low. Set to 500 ms.\n");
+    printf("\033[0m");
+    }
+
+    if (NPCBotsConfig::HttpTimeoutMs > 60000)
+    {
+    NPCBotsConfig::HttpTimeoutMs = 60000;
+
+    printf("\033[1;33m");
+    printf("[AI WARNING] AI.HttpTimeoutMs too high. Clamped to 60000 ms.\n");
+    printf("\033[0m");
+    }
+
+    if (NPCBotsConfig::HttpResponseTimeoutMs < 1000)
+    {
+    NPCBotsConfig::HttpResponseTimeoutMs = 1000;
+
+    printf("\033[1;33m");
+    printf("[AI WARNING] AI.HttpResponseTimeoutMs too low. Set to 1000 ms.\n");
+    printf("\033[0m");
+    }
+
+    if (NPCBotsConfig::HttpResponseTimeoutMs > 120000)
+    {
+    NPCBotsConfig::HttpResponseTimeoutMs = 120000;
+
+    printf("\033[1;33m");
+    printf("[AI WARNING] AI.HttpResponseTimeoutMs too high. Clamped to 120000 ms.\n");
+    printf("\033[0m");
+    }
     
     // just a check to see if all values are respected from conf
     printf("\033[1;36m"); // bright cyan
@@ -759,10 +888,12 @@ NPCBotsConfig::CombatVictoryChance = sConfigMgr->GetOption<uint32>("Combat.Victo
     NPCBotsConfig::CombatDamageChance,
     NPCBotsConfig::CombatVictoryChance);
     
-    printf(" AI Limits: Queue=%u | ActivePerPlayer=%u | CombatInterval=%u\n",
+    printf(" AI Limits: Queue=%u | ActivePerPlayer=%u | CombatInterval=%u | HttpTimeout=%u | HttpResponseTimeout=%u\n",
     NPCBotsConfig::MaxQueueSize,
     NPCBotsConfig::MaxActiveRequestsPerPlayer,
-    NPCBotsConfig::CombatAIMinInterval);
+    NPCBotsConfig::CombatAIMinInterval,
+    NPCBotsConfig::HttpTimeoutMs,
+    NPCBotsConfig::HttpResponseTimeoutMs);
     
     printf(" Workers: Threads=%u\n",
     NPCBotsConfig::WorkerThreads);

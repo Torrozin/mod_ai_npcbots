@@ -31,6 +31,7 @@ public:
     static void EnqueueRequest(const AIRequest& req);
     static bool PopResponse(AIResponse& res);
     static bool CanPlayerSpeak(uint64 playerGUID, uint32 delayMs);
+    static void CleanupPlayerTalkTime(uint64 playerGUID);
     static void FlushQueues();
 
 private:

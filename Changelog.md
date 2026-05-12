@@ -113,12 +113,34 @@ Result:
 
 ---
 
-## Added party chat commands for mage NPCBots:
+## Phase 12 - Added party chat commands for mage NPCBots:
 
 - /p bot food
 - /p bot water
 
 Commands now trigger the native NPCBot gossip logic.
+
+---
+
+## Phase 12
+
+- Added safe HTTP connect/send/response timeouts.
+- Added longer AI response timeout config.
+- Added chunked HTTP response handling.
+- Improved response trimming/fallback parsing.
+- Shared bot memory correctly between banter and response handling.
+- Added safety clamp for Banters.UpdateInterval = 0.
+- Fixed players sharing synchronized AI chatter timing.
+- Added automatic cleanup of stale offline player and bot AI memory data
+- Added logout cleanup for stale player AI timing/cache state
+- Fixed unbounded growth of player banter/update tracking maps
+- Fixed stale global talk cooldown entries persisting until shutdown
+- Fixed some indentation issues
+- Added defensive endpoint parsing
+- Prevented malformed host/port parsing
+- Replaced unsafe inet_addr() with inet_pton()
+- Added CRLF/header injection protection
+- Improved invalid endpoint handling.
 
 ---
 
@@ -135,4 +157,4 @@ Commands now trigger the native NPCBot gossip logic.
 - Dynamic load balancing
 - Configurable AI behavior
 - Performance-focused design
-- No AzerothCore core modifications required
+- No AzerothCore-wotlk-with-npcbots core modifications required
