@@ -417,18 +417,11 @@ void AIBanter::Update(uint32 diff)
         memoryText += globalMemory[i] + "\n";
     }
     
-    size_t startLocal = combinedMemory.size() > maxLines ? combinedMemory.size() - maxLines : 0;
-
-    for (size_t i = startLocal; i < combinedMemory.size(); ++i)
-    {
-        memoryText += combinedMemory[i] + "\n";
-    }
-
-    // 2. Local bot memory (extra personality context)
-    // std::vector<std::string> combinedMemory;
-    
-    
-    
+    // Local bot memory intentionally not appended here.
+    // Global memory already contains formatted named lines
+    // and is properly trimmed to MemoryMaxLines.
+    // Keeping local storage intact for future systems/debugging.
+          
     // Names and personalities
     std::string name1 = bot1->GetName();
     std::string name2 = bot2 ? bot2->GetName() : "";

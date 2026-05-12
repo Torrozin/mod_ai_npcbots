@@ -122,7 +122,7 @@ Commands now trigger the native NPCBot gossip logic.
 
 ---
 
-## Phase 12
+## Phase 13
 
 - Added safe HTTP connect/send/response timeouts.
 - Added longer AI response timeout config.
@@ -141,6 +141,13 @@ Commands now trigger the native NPCBot gossip logic.
 - Replaced unsafe inet_addr() with inet_pton()
 - Added CRLF/header injection protection
 - Improved invalid endpoint handling.
+
+---
+
+## Phase 14
+
+- Fixed AI conversation memory duplication and ensured combat chatter 
+    uses consistent named dialogue history with proper memory limits.
 
 ---
 
