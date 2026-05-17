@@ -109,5 +109,8 @@ Available commands:
 /p bot Shattrath
 /p bot Dalaran
 
-NOTE: This module does not alter mage portal cooldowns. Portal availability and cooldown handling are inherited from the underlying NPCBots implementation. Retail WotLK mage portals normally have no cooldown; any portal restrictions are inherited behavior and not introduced by this module.
+NOTE: This module does not alter mage portal cooldowns.
+Portal availability and cooldown handling are inherited from the underlying NPCBots implementation.
+Retail WotLK mage portals normally have no cooldown; any portal restrictions are
+inherited behavior and not introduced by this module.
 
