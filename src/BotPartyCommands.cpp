@@ -7,12 +7,31 @@
 #include "GossipDef.h"
 #include "Chat.h"
 #include "SharedDefines.h"
+#include "ObjectAccessor.h"
 
 #include <algorithm>
 #include <string>
 #include <unordered_map>
 
 static std::unordered_map<uint64, uint32> lastCommandTime;
+
+void CleanupBotPartyCommandPlayer(uint64 playerGuid)
+{
+    lastCommandTime.erase(playerGuid);
+}
+
+void CleanupBotPartyCommandStalePlayers()
+{
+    for (auto itr = lastCommandTime.begin(); itr != lastCommandTime.end(); )
+    {
+        Player* player = ObjectAccessor::FindPlayer(ObjectGuid(itr->first));
+
+        if (!player || !player->IsInWorld())
+            itr = lastCommandTime.erase(itr);
+        else
+            ++itr;
+    }
+}
 
 class BotPartyCommandsScript : public PlayerScript
 {

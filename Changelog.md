@@ -144,10 +144,27 @@ Commands now trigger the native NPCBot gossip logic.
 
 ---
 
-## Phase 14
+## 2026-05-12
 
 - Fixed AI conversation memory duplication and ensured combat chatter 
     uses consistent named dialogue history with proper memory limits.
+
+---
+
+## 2026-05-13
+
+- Prevent stale combat tracking accumulation during long server runtimes.
+
+---
+
+## 2026-05-17
+
+- Fixed stale combat chatter timer cleanup.
+- Fixed stale party command player state cleanup.
+- Fixed stale AI request counter reconciliation for discarded queue entries.
+- Added periodic cleanup for long-lived timing state.
+- Removed some DEBUG: lines.
+- Unified faction detection between AIBanter and AICombat by replacing hardcoded faction IDs with owner team lookup (Alliance/Horde).
 
 ---
 

@@ -34,6 +34,8 @@ namespace
 }
 
 void AddSC_BotPartyCommands();
+void CleanupBotPartyCommandPlayer(uint64 playerGuid);
+void CleanupBotPartyCommandStalePlayers();
 
 std::string RemoveTrailingName(const std::string& line, const std::string& botName)
 {
@@ -132,6 +134,7 @@ public:
         playerLastUpdate.erase(playerGuid);
 
         AIWorker::CleanupPlayerTalkTime(playerGuid);
+        CleanupBotPartyCommandPlayer(playerGuid);
     }
 };
 
@@ -182,6 +185,11 @@ public:
             // Banter timing cleanup
             CleanupPlayerMap(playerNextBanterTime);
             CleanupPlayerMap(playerLastUpdate);
+            CleanupBotPartyCommandStalePlayers();
+            AICombat::CleanupStaleState();
+            // Prevent stale combat GUID accumulation over long runtimes
+            activeCombat.clear();
+                        
         }
         
         AIBanter::Update(diff);

@@ -20,17 +20,23 @@
 extern std::unordered_map<uint64, std::deque<std::string>> playerGlobalMemory;
 extern std::unordered_map<uint64, std::deque<std::string>> botMemory;
 /// Get bot faction name for AI prompt
+/// Get bot faction name for AI prompt
 static std::string GetBotFactionName(Creature* bot)
 {
-    if (!bot) return "Neutral";
+    if (!bot)
+        return "Neutral";
 
-    uint32 faction = bot->GetFaction();
-    switch (faction)
+    Player* owner = bot->GetBotOwner();
+
+    // NPCBots follow owner faction
+    if (owner)
     {
-        case 1: return "Alliance";  // your Alliance faction ID
-        case 2: return "Horde";     // your Horde faction ID
-        default: return "Neutral";
+        return owner->GetTeamId() == TEAM_ALLIANCE
+            ? "Alliance"
+            : "Horde";
     }
+
+    return "Neutral";
 }
 
 // static uint32 banterTimer = 0; //old

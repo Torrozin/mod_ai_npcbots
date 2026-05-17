@@ -12,6 +12,7 @@ public:
     static void UpdateCombat(Creature* bot, uint32 diff);
     
     static void OnCombatEnd(Creature* bot);
+    static void CleanupStaleState();
 };
 
 #endif

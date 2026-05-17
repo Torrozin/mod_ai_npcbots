@@ -218,16 +218,40 @@ void AIWorker::FlushQueues()
 {
     printf("\033[1;33m[AI] Flushing AI queues...\033[0m\n");
 
+    std::unordered_map<uint64, uint32> discardedRequests;
+
     {
         std::lock_guard<std::mutex> lock(requestMutex);
-        std::queue<AIRequest> empty;
-        std::swap(requestQueue, empty);
+
+        while (!requestQueue.empty())
+        {
+            AIRequest const& req = requestQueue.front();
+            discardedRequests[req.playerGUID]++;
+            requestQueue.pop();
+        }
     }
 
     {
         std::lock_guard<std::mutex> lock(responseMutex);
         std::queue<AIResponse> empty;
         std::swap(responseQueue, empty);
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(activeRequestsMutex);
+
+        for (auto const& pair : discardedRequests)
+        {
+            auto itr = activeRequests.find(pair.first);
+
+            if (itr == activeRequests.end())
+                continue;
+
+            if (itr->second <= pair.second)
+                activeRequests.erase(itr);
+            else
+                itr->second -= pair.second;
+        }
     }
 }
 

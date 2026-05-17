@@ -11,6 +11,24 @@
 
 #include "Random.h"
 #include <unordered_map>
+#include "SharedDefines.h"
+
+/// Get bot faction name for AI prompt
+static std::string GetBotFactionName(Creature* bot)
+{
+    if (!bot)
+        return "Neutral";
+
+    Player* owner = bot->GetBotOwner();
+
+    // Use owner team (same logic NPCBots follow)
+    if (owner)
+    {
+        return owner->GetTeamId() == TEAM_ALLIANCE ? "Alliance" : "Horde";
+    }
+
+    return "Neutral";
+}
 
 std::string GetCreatureRaceName(Unit* unit)
 {
@@ -154,6 +172,44 @@ static std::unordered_map<uint64, uint32> combatTalkTimer;
 // hard limiter for AI calls per bot
 static std::unordered_map<uint64, uint32> lastAIRequestTime;
 
+static bool IsBotGuidInWorld(uint64 guid)
+{
+    auto const& players = ObjectAccessor::GetPlayers();
+
+    for (auto const& pair : players)
+    {
+        Player* player = pair.second;
+
+        if (!player)
+            continue;
+
+        Creature* bot = ObjectAccessor::GetCreature(*player, ObjectGuid(guid));
+
+        if (bot && bot->IsInWorld() && !bot->IsDuringRemoveFromWorld())
+            return true;
+    }
+
+    return false;
+}
+
+template<typename T>
+static void CleanupCombatBotMap(T& map)
+{
+    for (auto itr = map.begin(); itr != map.end(); )
+    {
+        if (!IsBotGuidInWorld(itr->first))
+            itr = map.erase(itr);
+        else
+            ++itr;
+    }
+}
+
+void AICombat::CleanupStaleState()
+{
+    CleanupCombatBotMap(combatTalkTimer);
+    CleanupCombatBotMap(lastAIRequestTime);
+}
+
 /// ============================
 /// ENTER COMBAT (15% chance)
 /// ============================
@@ -173,6 +229,7 @@ void AICombat::OnEnterCombat(Creature* bot, Unit*)
     // Declare all variables once
     std::string personality = GetPersonality(bot);
     std::string rules = GetPersonalityRules(personality);
+    std::string faction = GetBotFactionName(bot);
 
     Unit* victim = bot->GetVictim();
     std::string enemyName = victim ? victim->GetName() : "enemy";
@@ -197,6 +254,7 @@ void AICombat::OnEnterCombat(Creature* bot, Unit*)
     }
 
     prompt += "Never use the words 'mortal' or 'adventurer'.\n"
+    "Faction: " + faction + "\n"
     "Personality: " + personality + "\n"
     + rules + "\n"
     "Use ONE very short combat shout only (max 5 words).\n";
@@ -271,6 +329,7 @@ void AICombat::OnDamageTaken(Creature* bot, uint32&)
 
     std::string personality = GetPersonality(bot);
     std::string rules = GetPersonalityRules(personality);
+    std::string faction = GetBotFactionName(bot);
 
     Unit* victim = bot->GetVictim();
     std::string targetName = victim ? victim->GetName() : "enemy";
@@ -279,6 +338,7 @@ void AICombat::OnDamageTaken(Creature* bot, uint32&)
         "You are a World of Warcraft NPC named " + bot->GetName() + ".\n"
         "You are about to die fighting " + targetName + ".\n"
         "Never use the words 'mortal' or 'adventurer'.\n"
+        "Faction: " + faction + "\n"
         "Personality: " + personality + "\n"
         + rules + "\n"
         "Use ONE very short panic line (max 5 words).";
@@ -381,6 +441,7 @@ void AICombat::UpdateCombat(Creature* bot, uint32 diff)
 
         std::string personality = GetPersonality(bot);
         std::string rules = GetPersonalityRules(personality);
+        std::string faction = GetBotFactionName(bot);
 
         std::string targetName = "enemy";
 
@@ -415,6 +476,7 @@ void AICombat::UpdateCombat(Creature* bot, uint32 diff)
         prompt += "You are fighting the enemy.\n";
         prompt += "Never speak as the enemy.\n";
         prompt += "Never use the words 'mortal' or 'adventurer'.\n";
+        prompt += "Faction: " + faction + "\n";
         prompt += "Personality: " + personality + "\n";
         prompt += rules + "\n";
         prompt += "Use ONE very short combat line (max 5 words).";
@@ -480,11 +542,13 @@ void AICombat::OnCombatEnd(Creature* bot)
     
     std::string personality = GetPersonality(bot);
     std::string rules = GetPersonalityRules(personality);
+    std::string faction = GetBotFactionName(bot);
 
     std::string prompt =
         "You are a World of Warcraft NPC named " + bot->GetName() + ".\n"
         "The enemy has been defeated.\n"
         "Never use the words 'mortal' or 'adventurer'.\n"
+        "Faction: " + faction + "\n"
         "Personality: " + personality + "\n"
         + rules + "\n"
         "Say a short victory line (max 8 words).";
