@@ -165,6 +165,7 @@ Commands now trigger the native NPCBot gossip logic.
 - Added periodic cleanup for long-lived timing state.
 - Removed some DEBUG: lines.
 - Unified faction detection between AIBanter and AICombat by replacing hardcoded faction IDs with owner team lookup (Alliance/Horde).
+- Added party bot portal commands for major cities.
 
 ---
 

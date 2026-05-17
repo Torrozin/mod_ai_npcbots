@@ -95,7 +95,19 @@ Available commands:
 /p bot food
 /p bot water
 
+/p bot Stormwind
+/p bot Ironforge
+/p bot Darnassus
+/p bot Exodar
+/p bot Shattrath
+/p bot Dalaran
 
+/p bot Orgrimmar
+/p bot Undercity
+/p bot Thunder Bluff
+/p bot Silvermoon
+/p bot Shattrath
+/p bot Dalaran
 
-
+NOTE: This module does not alter mage portal cooldowns. Portal availability and cooldown handling are inherited from the underlying NPCBots implementation. Retail WotLK mage portals normally have no cooldown; any portal restrictions are inherited behavior and not introduced by this module.
 
